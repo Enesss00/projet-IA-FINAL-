@@ -56,16 +56,19 @@ test-web: web/node_modules
 	cd web && npx vitest run
 test: test-go test-web ## unit, property and statistical tests
 
+E2E_PORT ?= 8099
 e2e: build ## Playwright end-to-end against the real binary
-	@set -e; ./server/bin/pitwall serve -addr 127.0.0.1:8099 & pid=$$!; trap "kill $$pid" EXIT; \
-	for i in $$(seq 50); do curl -sf 127.0.0.1:8099/healthz >/dev/null && break; sleep 0.1; done; \
-	cd web && PITWALL_URL=http://127.0.0.1:8099 PW_CHROMIUM=$(CHROMIUM) npx playwright test
+	@if curl -sf 127.0.0.1:$(E2E_PORT)/healthz >/dev/null; then echo "port $(E2E_PORT) busy: set E2E_PORT"; exit 1; fi
+	@set -e; ./server/bin/pitwall serve -addr 127.0.0.1:$(E2E_PORT) & pid=$$!; trap "kill $$pid 2>/dev/null || true" EXIT; \
+	for i in $$(seq 50); do curl -sf 127.0.0.1:$(E2E_PORT)/healthz >/dev/null && break; sleep 0.1; done; \
+	cd web && PITWALL_URL=http://127.0.0.1:$(E2E_PORT) PW_CHROMIUM=$(CHROMIUM) npx playwright test
 
 FUZZTIME ?= 10s
 FT := $(or $(FUZZTIME),10s)
 fuzz: ## every Go fuzz target for FUZZTIME (default 10s each)
 	cd server && for t in "FuzzDecode ./internal/api" "FuzzValidateStrategy ./internal/race" \
-	  "FuzzParseStrategy ./internal/race" "FuzzGenerate ./internal/trackgen"; do \
+	  "FuzzParseStrategy ./internal/race" "FuzzGenerate ./internal/trackgen" \
+	  "FuzzRedteamParseIntExact ./internal/api"; do \
 	  set -- $$t; echo "== $$1"; $(GO) test -run '^$$' -fuzz "^$$1$$" -fuzztime $(FT) $$2 || exit 1; done
 
 determinism: ## 1 vs 16 workers must give byte-identical results

@@ -41,7 +41,11 @@ export class PitwallClient {
     private readonly factory: (url: string) => SocketLike = (u) => new WebSocket(u),
     private readonly storage: Pick<Storage, "getItem" | "setItem"> | null = safeSessionStorage(),
   ) {
-    this.session = this.storage?.getItem(SESSION_KEY) ?? "";
+    try {
+      this.session = this.storage?.getItem(SESSION_KEY) ?? "";
+    } catch {
+      this.session = ""; // storage disabled (privacy mode): no resume, still works
+    }
   }
 
   connect(): void {
@@ -53,8 +57,13 @@ export class PitwallClient {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     if (this.pingTimer) clearInterval(this.pingTimer);
-    this.ws?.close(1000, "bye");
+    const ws = this.ws;
     this.ws = null;
+    try {
+      ws?.close(1000, "bye");
+    } catch {
+      /* already closed */
+    }
   }
 
   get isOpen(): boolean {
@@ -75,7 +84,7 @@ export class PitwallClient {
   }
 
   private open(): void {
-    this.h.onStatus("connecting", { attempt: this.attempt, latencyMs: null });
+    this.status("connecting", { attempt: this.attempt, latencyMs: null });
     let ws: SocketLike;
     try {
       ws = this.factory(this.url);
@@ -88,6 +97,7 @@ export class PitwallClient {
       this.send({ type: "hello", data: { session: this.session, client: "pitwall-web/1" } });
     };
     ws.onmessage = (ev: MessageEvent) => {
+      if (this.stopped || this.ws !== ws) return; // late frame from a socket we left
       if (typeof ev.data !== "string") return;
       let m: Inbound | null = null;
       try {
@@ -101,9 +111,13 @@ export class PitwallClient {
       }
       if (m.type === "welcome") {
         this.session = m.data.session;
-        this.storage?.setItem(SESSION_KEY, this.session);
+        try {
+          this.storage?.setItem(SESSION_KEY, this.session);
+        } catch {
+          /* quota / disabled storage: resume will not survive a reload */
+        }
         this.attempt = 0;
-        this.h.onStatus("open", { attempt: 0, latencyMs: this.latencyMs });
+        this.status("open", { attempt: 0, latencyMs: this.latencyMs });
         this.startPing();
         safe(() => {
           this.h.onReady(m.data.resumed);
@@ -114,7 +128,7 @@ export class PitwallClient {
         if (t0 !== undefined) {
           this.latencyMs = Math.round(performance.now() - t0);
           this.pingSent.delete(m.id);
-          this.h.onStatus("open", { attempt: 0, latencyMs: this.latencyMs });
+          this.status("open", { attempt: 0, latencyMs: this.latencyMs });
         }
       }
       safe(() => {
@@ -125,12 +139,18 @@ export class PitwallClient {
       if (this.ws !== ws) return;
       this.ws = null;
       if (this.pingTimer) clearInterval(this.pingTimer);
-      this.h.onStatus("closed", { attempt: this.attempt, latencyMs: null });
+      this.status("closed", { attempt: this.attempt, latencyMs: null });
       if (!this.stopped) this.schedule();
     };
     ws.onerror = () => {
       /* onclose follows */
     };
+  }
+
+  private status(s: ConnStatus, info: { attempt: number; latencyMs: number | null }): void {
+    safe(() => {
+      this.h.onStatus(s, info);
+    });
   }
 
   private schedule(): void {

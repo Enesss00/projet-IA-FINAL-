@@ -1,5 +1,5 @@
 // Protocol v1 (docs/PROTOCOL.md). Types mirror server/internal/api.
-import { arr, bool, int, num, obj, oneOf, opt, str, tuple2, type Decoder } from "./guard";
+import { arr, bool, int, intIn, num, obj, oneOf, opt, str, tuple2, type Decoder } from "./guard";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -34,7 +34,7 @@ export const decodeTrack = obj({
   name: str,
   region: str,
   lengthM: num,
-  laps: int,
+  laps: intIn(1, 500),
   baseLapS: num,
   wearFactor: num,
   pitLossS: num,
@@ -91,10 +91,10 @@ const limits = obj({
 });
 export type Limits = NonNullable<ReturnType<typeof limits>>;
 
-export const decodeScenario = obj({
+const decodeScenarioRaw = obj({
   seed: str,
-  cars: int,
-  laps: int,
+  cars: intIn(1, 64),
+  laps: intIn(1, 500),
   pointsTop: int,
   track: decodeTrack,
   drivers: arr(driver, 64),
@@ -105,7 +105,26 @@ export const decodeScenario = obj({
   tyres: arr(tyre, 8),
   limits,
 });
-export type Scenario = NonNullable<ReturnType<typeof decodeScenario>>;
+export type Scenario = NonNullable<ReturnType<typeof decodeScenarioRaw>>;
+
+/** A permutation of 0..n-1. */
+const isPermutation = (a: readonly number[], n: number): boolean =>
+  a.length === n && new Set(a).size === n && a.every((x) => x >= 0 && x < n);
+
+/** Scenario decoder with cross-field coherence: the grid, drivers and player
+ * must agree with the grid size (the UI allocates per car). */
+export const decodeScenario: Decoder<Scenario> = (v) => {
+  const s = decodeScenarioRaw(v);
+  if (!s) return null;
+  const ok =
+    s.drivers.length === s.cars &&
+    isPermutation(s.grid, s.cars) &&
+    s.player >= 0 &&
+    s.player < s.cars &&
+    s.laps === s.track.laps &&
+    s.track.points.length >= 3;
+  return ok ? s : null;
+};
 
 export const decodeWelcome = obj({ session: str, protocol: int, resumed: bool, limits });
 export type Welcome = NonNullable<ReturnType<typeof decodeWelcome>>;
@@ -180,7 +199,7 @@ export type RaceEvent = NonNullable<ReturnType<typeof raceEvent>>;
 
 export const decodeLap = obj({
   lap: int,
-  laps: int,
+  laps: intIn(1, 500),
   flag: oneOf("green", "chequered"),
   cars: arr(carLap, 64),
   events: opt(arr(raceEvent, 2000), []),
@@ -191,7 +210,7 @@ export const decodeRaceState = obj({
   status: oneOf("running", "paused", "finished", "stopped"),
   speed: num,
   lap: int,
-  laps: int,
+  laps: intIn(1, 500),
   playhead: num,
   autoPaused: bool,
 });
@@ -199,15 +218,15 @@ export type RaceState = NonNullable<ReturnType<typeof decodeRaceState>>;
 
 export const decodeRaceStarted = obj({
   seed: str,
-  cars: int,
-  laps: int,
+  cars: intIn(1, 64),
+  laps: intIn(1, 500),
   speed: num,
   strategy: decodeStrategy,
 });
 
 export const decodeRaceSync = obj({
   seed: str,
-  cars: int,
+  cars: intIn(1, 64),
   strategy: decodeStrategy,
   state: decodeRaceState,
   laps: arr(decodeLap, 500),

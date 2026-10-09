@@ -8,6 +8,11 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 
 export const num: Decoder<number> = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 export const int: Decoder<number> = (v) => (typeof v === "number" && Number.isInteger(v) ? v : null);
+/** Integer within [lo, hi] (bounds every size the UI allocates from). */
+export const intIn =
+  (lo: number, hi: number): Decoder<number> =>
+  (v) =>
+    typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
 export const str: Decoder<string> = (v) => (typeof v === "string" ? v : null);
 export const bool: Decoder<boolean> = (v) => (typeof v === "boolean" ? v : null);
 

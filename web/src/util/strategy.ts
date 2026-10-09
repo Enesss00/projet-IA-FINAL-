@@ -28,6 +28,7 @@ export function parseCompact(text: string, name: string): StrategyOut | string {
 
 /** Returns a user-facing problem, or null when the plan looks valid. */
 export function validate(s: StrategyOut, laps: number): string | null {
+  if (!Number.isInteger(laps) || laps < 2) return "course invalide";
   if (s.stops.length > MAX_STOPS) return `${MAX_STOPS} arrêts au maximum`;
   let prev = 0;
   const used = new Set<Compound>([s.start]);
@@ -72,12 +73,18 @@ export function cliffRisk(
   let ratio = 0;
   for (const st of stints(s, laps)) {
     const r = (st.to - st.from + 1) / Math.max(1e-9, cliffLap(st.compound));
+    if (!Number.isFinite(r)) {
+      ratio = Infinity;
+      worst = st;
+      break;
+    }
     if (r > ratio) {
       ratio = r;
       worst = st;
     }
   }
-  const level = ratio < 0.85 ? "low" : ratio < 1 ? "medium" : "high";
+  // unusable cliff data (NaN, ∞) is never reported as low risk
+  const level = !Number.isFinite(ratio) ? "high" : ratio < 0.85 ? "low" : ratio < 1 ? "medium" : "high";
   return { ratio, level, worst };
 }
 
@@ -85,7 +92,7 @@ export function cliffRisk(
 export function moveStop(s: StrategyOut, i: number, lap: number, laps: number): StrategyOut {
   const stops = s.stops.map((x) => ({ ...x }));
   const st = stops[i];
-  if (!st) return s;
+  if (!st || !Number.isFinite(lap)) return s;
   const lo = (stops[i - 1]?.lap ?? 0) + 1;
   const hi = (stops[i + 1]?.lap ?? laps) - 1;
   st.lap = Math.max(lo, Math.min(hi, Math.round(lap)));
