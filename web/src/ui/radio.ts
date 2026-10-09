@@ -1,6 +1,7 @@
 // Deterministic race-engineer radio: fixed templates, the variant is picked
 // from the event itself (lap, car), so the same race always sounds the same.
 import type { Driver, LapView, RaceEvent } from "../net/protocol";
+import { fmtLap } from "../util/format";
 
 export interface RadioMsg {
   lap: number;
@@ -82,7 +83,7 @@ export function radioFor(ev: RaceEvent, lap: LapView, drivers: Driver[], player:
       return { lap: ev.lap, alert: false, text: `${code(ev.car)} abandonne, problème mécanique.` };
     case "fastest":
       return isP && ev.lap > 1
-        ? { lap: ev.lap, alert: false, text: `Meilleur tour en course : ${ev.value.toFixed(3)}. Superbe.` }
+        ? { lap: ev.lap, alert: false, text: `Meilleur tour en course : ${fmtLap(ev.value)}. Superbe.` }
         : null;
   }
 }

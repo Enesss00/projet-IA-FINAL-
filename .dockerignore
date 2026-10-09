@@ -1,0 +1,8 @@
+**/node_modules
+web/test-results
+web/playwright-report
+server/bin
+server/internal/webui/dist/assets
+server/internal/webui/dist/index.html
+.git
+docs/screenshots

@@ -112,7 +112,7 @@ export class CliffChart {
       const t = this.tyres.find((x) => x.code === st.compound);
       if (!t) continue;
       const len = st.to - st.from + 1;
-      g.lineWidth = 4;
+      g.lineWidth = 3;
       for (let a = 0; a < Math.min(len, t.curve.length - 1); a++) {
         const over = a + 1 > t.cliffLap;
         g.strokeStyle = over ? "#ff3d4a" : sc;

@@ -107,27 +107,29 @@ func CliffLap(c Compound, trackWear float64) float64 {
 	return Tyres[c].Cliff / (Tyres[c].WearPerLap * trackWear)
 }
 
-// Fuel model.
+// Race constants. Each comment reads "unit, meaning [lo, hi]"; the bounds
+// are enforced by TestParametersHaveUnitsAndBounds and documented in
+// docs/MODELS.md.
 const (
-	FuelSecPerKg   = 0.032  // s/kg, lap-time cost of fuel mass        [0.02, 0.045]
-	DayFormSigmaS  = 0.14   // s/lap, σ of a car's race-day pace (set-up, track evolution fit) [0, 0.4]
-	FuelMarginKg   = 1.2    // kg, safety margin loaded on top of race need
-	StartPenaltyS  = 4.6    // s, standing-start lap-1 extra time
-	GridSlotS      = 0.22   // s, time gap per grid slot at the start line
-	StartSigmaS    = 0.35   // s, launch variability (σ)
-	DirtyAirGapS   = 1.2    // s, interval below which a follower suffers dirty air
-	DirtyAirS      = 0.45   // s/lap, dirty-air loss at zero interval    [0, 1.5]
-	MinGapS        = 0.25   // s, minimal interval when a pass fails
-	PassFightS     = 0.18   // s, time both cars lose during a successful pass
-	MaxPassesLap   = 3      // passes a single car may make in one lap
-	DNFPerLap      = 0.0005 // 1/lap, mechanical failure hazard            [0, 0.01]
-	PitStationaryS = 2.4    // s, nominal stationary time
-	PitSigmaS      = 0.22   // s, σ of the stationary time (half-normal)
-	SlowStopP      = 0.03   // probability of a slow stop
-	SlowStopMeanS  = 2.5    // s, mean extra time of a slow stop (exponential)
-	SlowStopMaxS   = 12.0   // s, cap of the extra time
-	MistakeMeanS   = 1.6    // s, mean time lost in a driver mistake (exponential)
-	MistakeMaxS    = 7.0    // s, cap of a single mistake
+	FuelSecPerKg   = 0.032  // s/kg, lap-time cost of fuel mass [0.02, 0.045]
+	DayFormSigmaS  = 0.14   // s/lap, σ of a car's race-day pace (set-up, track fit) [0, 0.4]
+	FuelMarginKg   = 1.2    // kg, safety margin loaded on top of the race need [0, 5]
+	StartPenaltyS  = 4.6    // s, standing-start extra time on lap 1 [0, 10]
+	GridSlotS      = 0.22   // s, time gap per grid slot at the start line [0, 0.5]
+	StartSigmaS    = 0.35   // s, launch variability σ (half-normal) [0, 1.5]
+	DirtyAirGapS   = 1.2    // s, interval below which a follower suffers dirty air [0.3, 3]
+	DirtyAirS      = 0.45   // s/lap, dirty-air loss at zero interval [0, 1.5]
+	MinGapS        = 0.25   // s, interval kept behind a car that could not be passed [0.05, 1]
+	PassFightS     = 0.18   // s, time both cars lose in a successful pass [0, 1]
+	MaxPassesLap   = 3      // count, passes one car may make in one lap [1, 5]
+	DNFPerLap      = 0.0005 // 1/lap, mechanical failure hazard [0, 0.01]
+	PitStationaryS = 2.4    // s, nominal stationary time [1.5, 6]
+	PitSigmaS      = 0.22   // s, σ of the stationary time (half-normal) [0, 1]
+	SlowStopP      = 0.03   // probability per stop, slow stop [0, 0.2]
+	SlowStopMeanS  = 2.5    // s, mean extra time of a slow stop (exponential) [0, 10]
+	SlowStopMaxS   = 12.0   // s, cap of the slow-stop extra time [0, 30]
+	MistakeMeanS   = 1.6    // s, mean time lost in a driver mistake (exponential) [0, 5]
+	MistakeMaxS    = 7.0    // s, cap of a single mistake [0, 20]
 )
 
 // FuelDeltaS returns the lap-time cost of carrying fuelKg.

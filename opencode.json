@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md", "docs/MODELS.md", "docs/PROTOCOL.md"],
+  "permission": {
+    "edit": "ask",
+    "bash": {
+      "*": "ask",
+      "make *": "allow",
+      "go test *": "allow",
+      "go vet *": "allow",
+      "go run ./cmd/pitwall *": "allow",
+      "golangci-lint *": "allow",
+      "npx vitest *": "allow",
+      "npx tsc *": "allow",
+      "npx eslint *": "allow",
+      "npx prettier *": "allow",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "git log*": "allow",
+      "git push*": "deny",
+      "rm -rf *": "deny"
+    },
+    "webfetch": "ask"
+  }
+}

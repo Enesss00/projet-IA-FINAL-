@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go — lint, test, fuzz, determinism, bench
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          working-directory: server
+      - name: Unit, property and statistical tests (race detector)
+        run: go test -race -count=1 ./...
+      - name: Fuzz (short)
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecode$' -fuzztime 20s ./internal/api
+          go test -run '^$' -fuzz '^FuzzValidateStrategy$' -fuzztime 15s ./internal/race
+          go test -run '^$' -fuzz '^FuzzParseStrategy$' -fuzztime 10s ./internal/race
+          go test -run '^$' -fuzz '^FuzzGenerate$' -fuzztime 10s ./internal/trackgen
+      - name: Determinism (1 vs 16 workers, byte-identical)
+        run: go run ./cmd/pitwall verify -seeds 4 -sims 2000 -workers 16
+      - name: Benchmark (non-regression)
+        # GitHub runners are ~2x slower than a dev machine; the target on a
+        # reasonable core is 20k races/s, the CI floor guards against
+        # accidental 3x regressions.
+        run: go run ./cmd/pitwall bench -dur 3s -min 7000
+
+  web:
+    name: Web — lint, types, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx eslint .
+      - run: npx prettier --check .
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npm run build
+      - name: OpenCode harness (quality-gate plugin)
+        working-directory: .
+        run: node --experimental-strip-types --no-warnings .opencode/test/quality-gate.test.ts
+
+  e2e:
+    name: End-to-end (Playwright, real binary)
+    runs-on: ubuntu-latest
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: cd web && npm ci && npx playwright install --with-deps chromium
+      - run: make build
+      - name: Playwright
+        run: |
+          ./server/bin/pitwall serve -addr 127.0.0.1:8099 &
+          for i in $(seq 50); do curl -sf 127.0.0.1:8099/healthz && break; sleep 0.2; done
+          cd web && PITWALL_URL=http://127.0.0.1:8099 npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright
+          path: web/test-results
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pitwall:ci .
+      - name: Smoke test
+        run: |
+          docker run -d -p 8080:8080 --name pw pitwall:ci
+          for i in $(seq 50); do curl -sf localhost:8080/healthz && break; sleep 0.2; done
+          curl -sf localhost:8080/ | grep -q "PIT WALL"

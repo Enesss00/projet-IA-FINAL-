@@ -15,3 +15,6 @@ node_modules/
 .DS_Store
 *.log
 /bin/
+.opencode/gate.json
+.opencode/node_modules/
+.opencode/package-lock.json

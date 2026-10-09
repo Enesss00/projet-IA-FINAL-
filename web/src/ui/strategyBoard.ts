@@ -80,11 +80,21 @@ export class StrategyEditor {
     rm.addEventListener("click", () => {
       this.cb.onRemove(this.idx);
     });
-    const plus = h("button", { class: "btn ghost", title: "ajouter un arrêt", text: "+ARRÊT" });
+    const plus = h("button", {
+      class: "btn ghost",
+      title: "ajouter un arrêt",
+      "aria-label": "ajouter un arrêt",
+      text: "+",
+    });
     plus.addEventListener("click", () => {
       this.commit(addStop(this.strat, this.scen.laps));
     });
-    const minus = h("button", { class: "btn ghost", title: "retirer le dernier arrêt", text: "−ARRÊT" });
+    const minus = h("button", {
+      class: "btn ghost",
+      title: "retirer le dernier arrêt",
+      "aria-label": "retirer le dernier arrêt",
+      text: "−",
+    });
     minus.addEventListener("click", () => {
       const r = removeStop(this.strat);
       if (validate(r, this.scen.laps)) {
