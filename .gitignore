@@ -1,0 +1,17 @@
+# Go
+/server/bin/
+/server/internal/webui/dist/*
+!/server/internal/webui/dist/.gitkeep
+/server/testdata/fuzz/
+*.test
+*.out
+# Web
+node_modules/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
+/web/coverage/
+# Misc
+.DS_Store
+*.log
+/bin/

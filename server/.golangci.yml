@@ -1,0 +1,50 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - forbidigo
+    - gocritic
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    forbidigo:
+      forbid:
+        # Determinism invariant: no global math/rand, no wall clock in the engine.
+        - pattern: ^rand\.(Int|Intn|Float64|Seed|Perm|Shuffle|New)
+          msg: "use internal/rng (seeded sub-streams) — math/rand breaks determinism"
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    misspell:
+      # French UI strings and racing jargon ("strat", "partiel"...).
+      ignore-rules: [strat, partiel, strats]
+    staticcheck:
+      checks: ["all", "-QF1001", "-ST1000", "-ST1003"]
+    revive:
+      rules:
+        - name: exported
+        - name: var-naming
+        - name: indent-error-flow
+        - name: unused-parameter
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - assignOp
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [unparam, revive]
+formatters:
+  enable:
+    - gofmt
+    - goimports
