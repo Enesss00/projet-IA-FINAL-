@@ -219,12 +219,18 @@ func (s *Server) evictOldestLocked() {
 	}
 }
 
+// detach is called when a connection leaves. Only the connection that
+// currently owns the session may pause its race or cancel its search: after
+// a takeover (another connection presented the same id), the old
+// connection's departure must not disturb the new owner.
 func (ss *Session) detach(cl *client) {
 	ss.mu.Lock()
-	if ss.cl == cl {
-		ss.cl = nil
-		ss.detachedAt = time.Now()
+	if ss.cl != cl {
+		ss.mu.Unlock()
+		return
 	}
+	ss.cl = nil
+	ss.detachedAt = time.Now()
 	cancel := ss.simCancel
 	ss.mu.Unlock()
 	if cancel != nil {
@@ -464,12 +470,20 @@ func (cl *client) handle(ctx context.Context, b []byte) {
 		}
 		cl.hello(m)
 	case "ping":
+		if _, pe := decodeData[EmptyMsg](env.Data); pe != nil {
+			cl.sendErr(env.ID, pe)
+			return
+		}
 		cl.send("pong", env.ID, map[string]any{"t": time.Now().UnixMilli()}, false)
 	case "scenario.get":
 		cl.scenario(env)
 	case "sim.start":
 		cl.simStart(ctx, env)
 	case "sim.cancel":
+		if _, pe := decodeData[EmptyMsg](env.Data); pe != nil {
+			cl.sendErr(env.ID, pe)
+			return
+		}
 		cl.session.cancelSim()
 		cl.send("sim.cancelled", env.ID, struct{}{}, true)
 	case "race.start":

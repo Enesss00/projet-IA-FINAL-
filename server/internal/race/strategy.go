@@ -160,7 +160,7 @@ func ParseStrategy(s string) (Strategy, error) {
 	if err != nil {
 		return Strategy{}, verr("start", "%v", err)
 	}
-	st := Strategy{Name: s, Start: start}
+	st := Strategy{Start: start}
 	for i := 1; i < len(parts); i += 2 {
 		lap := 0
 		if len(parts[i]) == 0 || len(parts[i]) > 4 {
@@ -178,6 +178,9 @@ func ParseStrategy(s string) (Strategy, error) {
 		}
 		st.Stops = append(st.Stops, Stop{Lap: lap, Compound: c})
 	}
+	// the canonical notation is the name: never the raw input, which may
+	// contain blanks or control characters
+	st.Name = st.String()
 	if len(st.Name) > 24 {
 		st.Name = st.Name[:24]
 	}

@@ -30,7 +30,7 @@ type liveRace struct {
 	finished   bool
 	playhead   float64
 
-	ctrl     chan ctrlMsg
+	stopped  bool
 	quit     chan struct{}
 	quitOnce sync.Once
 }
@@ -61,23 +61,42 @@ type RaceSyncView struct {
 }
 
 func newLiveRace(sess *Session, sc *race.Scenario, seed string, strat race.Strategy, speed float64) *liveRace {
-	lr := &liveRace{sess: sess, sc: sc, seed: seed, strat: strat, speed: speed, ctrl: make(chan ctrlMsg, 16), quit: make(chan struct{})}
+	lr := &liveRace{sess: sess, sc: sc, seed: seed, strat: strat, speed: speed, quit: make(chan struct{})}
 	lr.st = sc.NewState(rng.New(sc.Seed).Derive(rng.LabelLive), strat)
 	return lr
 }
 
 func (lr *liveRace) stop() { lr.quitOnce.Do(func() { close(lr.quit) }) }
 
+// control applies a command synchronously and acknowledges it with the
+// resulting race.state: no command is ever dropped, however fast they come
+// (the per-connection rate limiter bounds the flow).
 func (lr *liveRace) control(m ctrlMsg) {
-	select {
-	case lr.ctrl <- m:
-	default:
+	lr.mu.Lock()
+	switch m.action {
+	case "pause":
+		lr.paused = true
+		lr.autoPaused = m.auto
+	case "resume":
+		lr.paused, lr.autoPaused = false, false
+	case "speed":
+		lr.speed = m.speed
+	case "stop":
+		lr.stopped = true
 	}
+	st := lr.stateLocked()
+	lr.mu.Unlock()
+	if m.action == "stop" {
+		lr.stop()
+	}
+	lr.sess.send("race.state", "", st, true)
 }
 
 func (lr *liveRace) stateLocked() RaceStateView {
 	status := "running"
 	switch {
+	case lr.stopped:
+		status = "stopped"
 	case lr.finished:
 		status = "finished"
 	case lr.paused:
@@ -123,28 +142,14 @@ func (lr *liveRace) run() {
 		select {
 		case <-lr.quit:
 			return
-		case m := <-lr.ctrl:
-			lr.mu.Lock()
-			switch m.action {
-			case "pause":
-				lr.paused = true
-				lr.autoPaused = m.auto
-			case "resume":
-				lr.paused, lr.autoPaused = false, false
-			case "speed":
-				lr.speed = m.speed
-			case "stop":
-				lr.mu.Unlock()
-				return
-			}
-			last = time.Now()
-			st := lr.stateLocked()
-			lr.mu.Unlock()
-			lr.sess.send("race.state", "", st, true)
 		case now := <-tick.C:
 			lr.mu.Lock()
 			dt := now.Sub(last).Seconds()
 			last = now
+			if lr.stopped {
+				lr.mu.Unlock()
+				return
+			}
 			if !lr.paused && !lr.finished {
 				lr.playhead += dt * lr.speed
 				for !lr.st.Done() && len(lr.ends) >= 2 && lr.playhead >= lr.ends[len(lr.ends)-2] {

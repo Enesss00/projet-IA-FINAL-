@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"strconv"
-	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -81,7 +81,11 @@ func DecodeEnvelope(b []byte) (Envelope, *ProtoError) {
 		return env, perr(CodeBadJSON, "", "message non UTF-8")
 	}
 	if err := strictUnmarshal(b, &env); err != nil {
-		return env, perr(CodeBadJSON, "", "JSON invalide : %s", cleanErr(err))
+		return Envelope{}, perr(CodeBadJSON, "", "JSON invalide : %s", cleanErr(err))
+	}
+	if len(env.ID) > MaxIDLen || !printableASCII(env.ID) {
+		env.ID = "" // never echo an invalid id back
+		return env, perr(CodeBadJSON, "id", "id invalide (%d caractères ASCII imprimables max)", MaxIDLen)
 	}
 	if env.V != ProtocolVersion {
 		return env, perr(CodeBadVersion, "v", "version de protocole %d non supportée (attendu %d)", env.V, ProtocolVersion)
@@ -89,25 +93,29 @@ func DecodeEnvelope(b []byte) (Envelope, *ProtoError) {
 	if env.Type == "" || len(env.Type) > 32 {
 		return env, perr(CodeBadJSON, "type", "type de message manquant ou trop long")
 	}
-	if len(env.ID) > MaxIDLen || !printableASCII(env.ID) {
-		return env, perr(CodeBadJSON, "id", "id invalide (%d caractères ASCII imprimables max)", MaxIDLen)
-	}
 	return env, nil
 }
 
 // strictUnmarshal decodes exactly one JSON value, rejecting unknown fields
 // and trailing data.
+//
+// Beyond encoding/json it also refuses: nesting deeper than MaxJSONDepth,
+// duplicated keys, and keys that only match a field case-insensitively.
+// Every error it returns is in French.
 func strictUnmarshal(b []byte, v any) error {
+	if err := checkShape(b); err != nil {
+		return err
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	dec.UseNumber()
 	if err := dec.Decode(v); err != nil {
-		return err
+		return translate(err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("données après la valeur JSON")
+		return strictErr("données après la valeur JSON")
 	}
-	return nil
+	return checkKeys(b, reflect.TypeOf(v))
 }
 
 // decodeData decodes the payload of a message into T. A missing payload
@@ -124,8 +132,7 @@ func decodeData[T any](raw json.RawMessage) (T, *ProtoError) {
 }
 
 func cleanErr(err error) string {
-	s := err.Error()
-	s = strings.TrimPrefix(s, "json: ")
+	s := translate(err).Error()
 	if len(s) > 160 {
 		s = s[:160] + "…"
 	}
@@ -142,6 +149,9 @@ func printableASCII(s string) bool {
 }
 
 // ---- inbound payloads ----
+
+// EmptyMsg is the payload of ping and sim.cancel: an empty object.
+type EmptyMsg struct{}
 
 // HelloMsg opens or resumes a session.
 type HelloMsg struct {
@@ -215,14 +225,9 @@ func parseInt(n Num, field string, lo, hi int) (int, *ProtoError) {
 	if s == "" {
 		return 0, perr(CodeInvalid, field, "%s manquant", field)
 	}
-	v, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		f, ferr := strconv.ParseFloat(s, 64)
-		if ferr == nil && !math.IsInf(f, 0) && !math.IsNaN(f) && f == math.Trunc(f) && math.Abs(f) < 1e15 {
-			v = int64(f)
-		} else {
-			return 0, perr(CodeInvalid, field, "%s doit être un entier (reçu %s)", field, trunc(s, 24))
-		}
+	v, ok := exactInt(s)
+	if !ok {
+		return 0, perr(CodeInvalid, field, "%s doit être un entier dans [%d, %d] (reçu %s)", field, lo, hi, trunc(s, 24))
 	}
 	if v < int64(lo) || v > int64(hi) {
 		return 0, perr(CodeInvalid, field, "%s = %d hors bornes [%d, %d]", field, v, lo, hi)
@@ -262,9 +267,9 @@ func parseCars(n *Num) (int, *ProtoError) {
 func (d StrategyDTO) ToStrategy(laps int, field string) (race.Strategy, *ProtoError) {
 	var s race.Strategy
 	s.Name = d.Name
-	c, err := model.ParseCompound(d.Start)
-	if err != nil {
-		return s, perr(CodeInvalid, field+".start", "%s", err.Error())
+	c, ok := model.ParseCode(d.Start)
+	if !ok {
+		return s, perr(CodeInvalid, field+".start", "gomme de départ inconnue %q : S, M ou H attendu", trunc(d.Start, 16))
 	}
 	s.Start = c
 	if len(d.Stops) > race.MaxStops {
@@ -276,9 +281,9 @@ func (d StrategyDTO) ToStrategy(laps int, field string) (race.Strategy, *ProtoEr
 		if pe != nil {
 			return s, pe
 		}
-		comp, err := model.ParseCompound(st.Compound)
-		if err != nil {
-			return s, perr(CodeInvalid, f+".compound", "%s", err.Error())
+		comp, ok := model.ParseCode(st.Compound)
+		if !ok {
+			return s, perr(CodeInvalid, f+".compound", "gomme inconnue %q : S, M ou H attendu", trunc(st.Compound, 16))
 		}
 		s.Stops = append(s.Stops, race.Stop{Lap: lap, Compound: comp})
 	}

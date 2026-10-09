@@ -30,14 +30,16 @@ func Wilson(k, n int) Interval {
 	den := 1 + z2/nf
 	centre := (p + z2/(2*nf)) / den
 	half := Z95 * math.Sqrt(p*(1-p)/nf+z2/(4*nf*nf)) / den
-	return Interval{P: p, Lo: math.Max(0, centre-half), Hi: math.Min(1, centre+half)}
+	// Rounding can put centre±half a few ULPs past p when p is 0 or 1: the
+	// interval must always contain its estimate.
+	return Interval{P: p, Lo: math.Min(p, math.Max(0, centre-half)), Hi: math.Max(p, math.Min(1, centre+half))}
 }
 
 // Quantile returns the q-quantile of an already sorted slice (type 7,
 // linear interpolation). It returns NaN for an empty slice.
 func Quantile(sorted []float64, q float64) float64 {
 	n := len(sorted)
-	if n == 0 {
+	if n == 0 || math.IsNaN(q) {
 		return math.NaN()
 	}
 	if q <= 0 {

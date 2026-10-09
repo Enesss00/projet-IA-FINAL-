@@ -42,15 +42,32 @@ func (c Compound) Name() string {
 	return "UNKNOWN"
 }
 
-// ParseCompound accepts "S", "M", "H" or the full names (case-insensitive).
+// ParseCode accepts exactly "S", "M" or "H" (the wire format).
+func ParseCode(s string) (Compound, bool) {
+	for i := Compound(0); i < NumCompounds; i++ {
+		if s == compoundCodes[i] {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// ParseCompound is the lenient form for humans (CLI): one-letter codes or
+// full names, ASCII case-insensitive, surrounding ASCII blanks ignored. No
+// Unicode folding: "ſ" is not "S".
 func ParseCompound(s string) (Compound, error) {
-	u := strings.ToUpper(strings.TrimSpace(s))
+	u := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' {
+			return r - 'a' + 'A'
+		}
+		return r
+	}, strings.Trim(s, " \t\r\n"))
 	for i := Compound(0); i < NumCompounds; i++ {
 		if u == compoundCodes[i] || u == compoundNames[i] {
 			return i, nil
 		}
 	}
-	return 0, fmt.Errorf("unknown tyre compound %q (expected S, M or H)", truncate(s, 16))
+	return 0, fmt.Errorf("gomme inconnue %q : S, M ou H attendu", truncate(s, 16))
 }
 
 func truncate(s string, n int) string {
@@ -212,11 +229,11 @@ func (c Compound) MarshalText() ([]byte, error) {
 	return []byte(compoundCodes[c]), nil
 }
 
-// UnmarshalText decodes a compound code or name.
+// UnmarshalText decodes a strict one-letter code.
 func (c *Compound) UnmarshalText(b []byte) error {
-	v, err := ParseCompound(string(b))
-	if err != nil {
-		return err
+	v, ok := ParseCode(string(b))
+	if !ok {
+		return fmt.Errorf("gomme inconnue %q : S, M ou H attendu", truncate(string(b), 16))
 	}
 	*c = v
 	return nil
