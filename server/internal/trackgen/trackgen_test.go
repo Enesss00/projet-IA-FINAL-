@@ -58,3 +58,17 @@ func FuzzGenerate(f *testing.F) {
 		}
 	})
 }
+
+func TestPitLaneBeforeLine(t *testing.T) {
+	for s := uint64(0); s < 50; s++ {
+		tr := Generate(s)
+		if tr.PitEntry < 0.85 || tr.PitEntry >= 1 {
+			t.Fatalf("seed %d: pit entry at %v", s, tr.PitEntry)
+		}
+		last := tr.PitLane[len(tr.PitLane)-1]
+		first := tr.Points[0]
+		if d := (last.X-first.X)*(last.X-first.X) + (last.Y-first.Y)*(last.Y-first.Y); d > 0.01 {
+			t.Fatalf("seed %d: pit exit not at the line", s)
+		}
+	}
+}

@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"pitwall/internal/race"
+	"pitwall/internal/rng"
 )
 
 func testServer(t *testing.T, mut func(*Config)) (*Server, *httptest.Server) {
@@ -355,4 +358,27 @@ func TestHealthAndStatic(t *testing.T) {
 		t.Fatalf("healthz: %v", err)
 	}
 	_ = resp.Body.Close()
+}
+
+// Every slice of every payload must encode as a JSON array, never null:
+// clients decode strictly.
+func TestScenarioViewHasNoNullArrays(t *testing.T) {
+	for i := 0; i < 300; i++ {
+		seed := fmt.Sprintf("S%d", i)
+		sc, err := race.NewScenario(rng.SeedFromString(seed), race.Options{Cars: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(newScenarioView(seed, sc))
+		if strings.Contains(string(b), "null") {
+			t.Fatalf("seed %s: null in scenario JSON", seed)
+		}
+		st := sc.NewState(rng.New(1), sc.Rivals[sc.Player])
+		var log race.Log
+		sc.Step(&st, &log)
+		b, _ = json.Marshal(newLapView(sc, &st, nil))
+		if strings.Contains(string(b), "null") {
+			t.Fatalf("seed %s: null in lap JSON", seed)
+		}
+	}
 }

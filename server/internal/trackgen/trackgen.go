@@ -69,7 +69,8 @@ type Track struct {
 	Corners      []Corner   `json:"corners"`
 	Zones        []Zone     `json:"zones"`
 	PitLane      []Point    `json:"pitLane"`
-	Sectors      [2]float64 `json:"sectors"` // distance fractions of the S1/S2 and S2/S3 boundaries
+	Sectors      [2]float64 `json:"sectors"`  // distance fractions of the S1/S2 and S2/S3 boundaries
+	PitEntry     float64    `json:"pitEntry"` // distance fraction where the pit lane leaves the track
 }
 
 // Generate returns the circuit for a seed. It is a pure function of seed.
@@ -138,17 +139,18 @@ func try(r *rng.Stream, seed uint64) (*Track, bool) {
 	}
 	t.OvertakeEase = round(clamp(ease, 0.4, 1.6), 3)
 
-	// Pit lane follows the main straight around the start line.
+	// The pit lane runs alongside the end of the main straight and rejoins
+	// at the start/finish line: a car that pits completes its in-lap in the
+	// pit lane, and its out-lap starts from the line like everyone else's.
 	pitLen := 0.0
 	var pitIdx []int
-	for k := -1; pitLen < 380; k++ {
-		i := (len(m) + k) % len(m)
-		pitIdx = append(pitIdx, i)
+	for k := 1; pitLen < 380 && k < len(m)/4; k++ {
+		i := len(m) - k
+		pitIdx = append([]int{i}, pitIdx...)
 		pitLen += ds[i]
-		if len(pitIdx) > len(m)/4 {
-			break
-		}
 	}
+	pitIdx = append(pitIdx, 0)
+	t.PitEntry = round(df[pitIdx[0]], 5)
 	// pit loss = slow lane - fast track over the same distance + entry/exit
 	var trackT float64
 	for _, i := range pitIdx {
@@ -430,7 +432,7 @@ func integrate(v, ds []float64) (float64, []float64, []float64) {
 
 func zones(v, df, ds []float64) []Zone {
 	n := len(v)
-	var zs []Zone
+	zs := []Zone{} // never nil: encodes as [] (a circuit may have no zone)
 	// A zone is a straight that ends in a heavy braking point: a local speed
 	// maximum followed by a drop of more than 20 m/s. It starts where the car
 	// was still below 85% of that peak speed.
@@ -462,7 +464,7 @@ func zones(v, df, ds []float64) []Zone {
 
 func corners(v, k, df []float64) []Corner {
 	n := len(v)
-	var cs []Corner
+	cs := []Corner{}
 	for i := 0; i < n; i++ {
 		a, b := v[(i-1+n)%n], v[(i+1)%n]
 		if v[i] <= a && v[i] < b && v[i] < vMax*0.8 && math.Abs(k[i]) > 1.0/600 {
